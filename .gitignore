@@ -1,0 +1,5 @@
+.claude/
+.taste-skill/
+.impeccable/
+node_modules/
+*.log

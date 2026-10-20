@@ -1,0 +1,10 @@
+{
+  "name": "forja",
+  "private": true,
+  "type": "module",
+  "description": "App pessoal de treino de guitarra: ofensiva, medalhas e 52 aulas.",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "start": "python -m http.server 5173"
+  }
+}

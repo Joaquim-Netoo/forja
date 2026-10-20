@@ -1,0 +1,44 @@
+/* FORJA — tokens.
+   Preto quente de palco, branco osso, vermelho-sangue só na ação.
+   Dourado e aço aparecem apenas nos patches (medalhas). */
+:root {
+  color-scheme: dark;
+
+  --bg: #0c0a08;
+  --surface: #17130f;
+  --surface-2: #221c16;
+  --surface-3: #2e261e;
+  --ink: #f2ece2;
+  --muted: #b2a99c;
+  --faint: #6f675d;
+  --accent: #d32730;
+  --accent-press: #b01e26;
+  --accent-text: #f0545b; /* vermelho para texto pequeno: 5,8:1 sobre o fundo */
+  --accent-ink: #ffffff;
+  --gold: #c9a45a;
+  --gold-deep: #7a5f2c;
+  --steel: #9aa1aa;
+  --blood: #5c0f13;
+
+  --font-display: 'Grenze Gotisch', 'UnifrakturCook', Georgia, serif;
+  --font-text: 'Chivo', 'Segoe UI', system-ui, sans-serif;
+  /* taste-skill-ignore: TAB é notação em colunas, precisa de largura fixa */
+  --font-tab: 'Cascadia Mono', 'JetBrains Mono', Consolas, 'Courier New', monospace; /* taste-skill-ignore */
+
+  /* Cinco tamanhos fazem o trabalho todo. */
+  --step-small: clamp(0.8125rem, 0.79rem + 0.1vw, 0.875rem);
+  --step-body: clamp(1.0625rem, 1rem + 0.25vw, 1.1875rem);
+  --step-lead: clamp(1.375rem, 1.15rem + 0.9vw, 1.875rem);
+  --step-head: clamp(2.5rem, 1.4rem + 4.6vw, 5.25rem);
+  --step-monument: clamp(10rem, 4rem + 34vw, 22rem);
+
+  --gutter: clamp(1rem, 0.6rem + 1.6vw, 2rem);
+  --measure: 66ch;
+  --bar-h: 64px;
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --dur-press: 140ms;
+  --dur-ui: 220ms;
+}
