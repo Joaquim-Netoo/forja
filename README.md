@@ -1,8 +1,10 @@
 # Forja
 
-App pessoal de treino de guitarra, do zero ao avançado. 52 aulas em 6 fases, com
+App pessoal de treino de guitarra, do zero ao avançado. 52 aulas em 6 discos, com
 ofensiva diária, patches de medalha numa jaqueta de batalha e uma Flying V em 3D
-que aparece a cada aula concluída. Visual inspirado em heavy metal.
+realista no topo da tela. Visual "palco e papel", inspirado em heavy metal: o palco
+escuro carrega a emoção; setlist, encarte, ingresso e passe de backstage carregam
+o que se lê e se faz.
 
 **Abrir o app:** <https://joaquim-netoo.github.io/forja/>
 
@@ -26,6 +28,12 @@ Seus dados ficam só no seu navegador.
 - **Medalhas:** 26 patches em 4 grupos: ofensiva, fases, marcos de técnica e secretas.
 - **Ferramentas:** metrônomo com acento no tempo 1 (abre já no BPM da meta) e
   cronômetro de 1 minuto com contagem 3-2-1 para a troca de acordes.
+- **Guitarra 3D:** fica no topo da tela Hoje com a pintura atual. Arraste para
+  girar; toque para soltar um power chord distorcido (som desligável em Ajustes).
+  No celular ela usa qualidade menor e só renderiza quando algo se mexe.
+- **Movimento:** transições entre telas, número da ofensiva rolando, caneta riscando
+  o setlist, carimbo de "treino feito", discos e encarte animados na rolagem. Tudo
+  desliga com a opção do sistema "reduzir movimento".
 - **Modo livre** em Ajustes abre todas as aulas e provas.
 
 ## Rodar no computador
@@ -98,7 +106,7 @@ docs/                 design e plano
 
 ## Créditos
 
-- [GSAP](https://gsap.com) 3.12.5, licença padrão GreenSock (uso gratuito).
+- [GSAP](https://gsap.com) 3.13 com ScrollTrigger, SplitText e Flip, licença padrão GreenSock (uso gratuito).
 - [Three.js](https://threejs.org) r169, licença MIT (`vendor/LICENSE-three.txt`).
 - Fontes Chivo e Grenze Gotisch via Google Fonts, licença SIL Open Font.
 - Conteúdo das aulas baseado no curso "Curso de Guitarra: do Zero ao Avançado".

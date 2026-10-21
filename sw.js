@@ -1,12 +1,14 @@
 // Cache offline. Troque VERSION a cada publicação para atualizar os arquivos.
-const VERSION = 'forja-v1';
+const VERSION = 'forja-v2';
 const CORE = [
   './', 'index.html', 'manifest.webmanifest', 'css/tokens.css', 'css/app.css',
   'js/app.js', 'js/state.js', 'js/dates.js', 'js/streak.js', 'js/progress.js', 'js/medals.js', 'js/game.js',
   'js/curriculum.js', 'js/markup.js',
   'js/views/today.js', 'js/views/course.js', 'js/views/lesson.js', 'js/views/exam.js', 'js/views/medals.js', 'js/views/settings.js',
   'js/ui/html.js', 'js/ui/motion.js', 'js/ui/patch.js', 'js/ui/toast.js', 'js/ui/tools.js', 'js/ui/celebrate.js', 'js/ui/guitar3d.js',
-  'vendor/gsap.min.js', 'vendor/three.module.min.js', 'vendor/RoomEnvironment.js',
+  'js/ui/paints.js', 'js/ui/stage.js', 'js/ui/audio.js',
+  'vendor/gsap.min.js', 'vendor/ScrollTrigger.min.js', 'vendor/SplitText.min.js', 'vendor/Flip.min.js',
+  'vendor/three.module.min.js', 'vendor/RoomEnvironment.js',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
 ];
 

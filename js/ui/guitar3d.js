@@ -1,29 +1,154 @@
-// Flying V modelada em código. Carregada só quando uma aula é concluída.
-// Unidades ~ decímetros; o braço aponta para +Y, a frente da guitarra para +Z.
+// Flying V realista, modelada em código, e o palco 3D que a mostra.
+// Um único renderer é criado e o canvas muda de lugar: topo da tela Hoje ou
+// tela de celebração. Só renderiza quando algo se mexe (poupa bateria).
+// Unidades ~ 1 = 19 cm. Braço aponta para +Y, frente da guitarra para +Z.
 import * as THREE from 'three';
 import { RoomEnvironment } from '../../vendor/RoomEnvironment.js';
 
 export const PAINTS = {
-  'Madeira crua': { body: 0xb5824f, roughness: 0.62, metalness: 0, clearcoat: 0.05, hardware: 'chrome' },
-  'Preto fosco': { body: 0x161616, roughness: 0.55, metalness: 0, clearcoat: 0.08, hardware: 'chrome' },
-  'Vermelho-sangue': { body: 0x86070e, roughness: 0.22, metalness: 0, clearcoat: 1, hardware: 'chrome' },
-  'Branco osso': { body: 0xe8dfcc, roughness: 0.28, metalness: 0, clearcoat: 1, hardware: 'black' },
-  'Aço escovado': { body: 0x9da3ab, roughness: 0.34, metalness: 0.92, clearcoat: 0.25, hardware: 'black' },
-  'Ouro velho': { body: 0xa07c34, roughness: 0.3, metalness: 0.88, clearcoat: 0.5, hardware: 'chrome' },
-  'Obsidiana e ouro': { body: 0x050505, roughness: 0.1, metalness: 0, clearcoat: 1, hardware: 'gold' },
+  'Madeira crua': { wood: true, color: 0xffffff, roughness: 0.5, metalness: 0, clearcoat: 0.35, guard: 0xefe7da, hardware: 'chrome' },
+  'Preto fosco': { color: 0x151515, roughness: 0.62, metalness: 0, clearcoat: 0.08, guard: 0xefe7da, hardware: 'chrome' },
+  'Vermelho-sangue': { color: 0x8a0710, roughness: 0.32, metalness: 0, clearcoat: 1, guard: 0xf2ece2, hardware: 'chrome' },
+  'Branco osso': { color: 0xe9e0cc, roughness: 0.3, metalness: 0, clearcoat: 1, guard: 0x121212, hardware: 'black' },
+  'Aço escovado': { color: 0xa3a9b1, roughness: 0.3, metalness: 0.9, clearcoat: 0.6, flake: true, guard: 0x121212, hardware: 'black' },
+  'Ouro velho': { color: 0xa98236, roughness: 0.28, metalness: 0.85, clearcoat: 0.8, flake: true, guard: 0x121212, hardware: 'chrome' },
+  'Obsidiana e ouro': { color: 0x060606, roughness: 0.14, metalness: 0, clearcoat: 1, guard: 0x0a0a0a, hardware: 'gold' },
 };
 
 const HARDWARE = {
-  chrome: { color: 0xd8d8d8, metalness: 1, roughness: 0.18 },
-  gold: { color: 0xd6a849, metalness: 1, roughness: 0.24 },
-  black: { color: 0x1b1b1b, metalness: 0.6, roughness: 0.35 },
+  chrome: { color: 0xdedede, metalness: 1, roughness: 0.16 },
+  gold: { color: 0xd8aa4c, metalness: 1, roughness: 0.22 },
+  black: { color: 0x1c1c1c, metalness: 0.7, roughness: 0.32 },
 };
 
+// ── Medidas ──────────────────────────────────────────────────────────────
 const NUT_Y = 2.78;
 const BRIDGE_Y = -0.3;
-const SCALE = NUT_Y - BRIDGE_Y;
+const SCALE_LEN = NUT_Y - BRIDGE_Y;
 const FRETS = 22;
-const fretY = (n) => NUT_Y - SCALE * (1 - 2 ** (-n / 12));
+const fretY = (n) => NUT_Y - SCALE_LEN * (1 - 2 ** (-n / 12));
+const BODY_D = 0.16;
+const BEVEL = 0.03;
+const FRONT = BODY_D / 2 + BEVEL;
+const NECK_START = 0.2;
+const NECK_TOP = FRONT + 0.045;
+const BOARD_T = 0.028;
+const BOARD_TOP = NECK_TOP + BOARD_T;
+const BOARD_END = fretY(FRETS) - 0.05;
+const SADDLE_Z = FRONT + 0.092;
+const TAIL_Y = -0.41;
+// Largura da escala: 0,18 na pestana, 0,215 no fim.
+const boardHalf = (y) => THREE.MathUtils.lerp(0.1075, 0.09, (y - BOARD_END) / (NUT_Y - BOARD_END));
+
+// ── Texturas geradas no próprio app ─────────────────────────────────────
+function canvas(w, h) {
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  return [c, c.getContext('2d')];
+}
+
+function grainLines(ctx, w, h, { count, color, alpha, amp, width }) {
+  for (let i = 0; i < count; i += 1) {
+    const x0 = Math.random() * w;
+    const a = amp[0] + Math.random() * amp[1];
+    const f = 0.002 + Math.random() * 0.006;
+    ctx.strokeStyle = `rgba(${color}, ${alpha[0] + Math.random() * alpha[1]})`;
+    ctx.lineWidth = width[0] + Math.random() * width[1];
+    ctx.beginPath();
+    for (let y = -8; y <= h + 8; y += 8) {
+      const x = x0 + Math.sin(y * f + i) * a + Math.sin(y * f * 3.1 + i * 2) * a * 0.25;
+      if (y < 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+}
+
+function woodTexture(maxAniso) {
+  const [c, ctx] = canvas(512, 1024);
+  ctx.fillStyle = '#b8834f';
+  ctx.fillRect(0, 0, 512, 1024);
+  grainLines(ctx, 512, 1024, { count: 260, color: '96, 52, 22', alpha: [0.05, 0.2], amp: [3, 12], width: [0.6, 2.6] });
+  grainLines(ctx, 512, 1024, { count: 60, color: '226, 176, 120', alpha: [0.04, 0.12], amp: [3, 10], width: [1, 4] });
+  for (let i = 0; i < 4000; i += 1) {
+    ctx.fillStyle = `rgba(70, 36, 14, ${Math.random() * 0.22})`;
+    ctx.fillRect(Math.random() * 512, Math.random() * 1024, 1, 2 + Math.random() * 4);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = THREE.RepeatWrapping;
+  t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(0.55, 0.32);
+  t.anisotropy = maxAniso;
+  return t;
+}
+
+function rosewoodTexture(maxAniso) {
+  const [c, ctx] = canvas(256, 1024);
+  ctx.fillStyle = '#2b1710';
+  ctx.fillRect(0, 0, 256, 1024);
+  grainLines(ctx, 256, 1024, { count: 120, color: '12, 6, 3', alpha: [0.15, 0.4], amp: [1, 5], width: [0.6, 2.4] });
+  grainLines(ctx, 256, 1024, { count: 40, color: '92, 44, 26', alpha: [0.1, 0.25], amp: [1, 4], width: [1, 3] });
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = THREE.RepeatWrapping;
+  t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = maxAniso;
+  return t;
+}
+
+// Normal map de "flocos" para as pinturas metálicas.
+function flakeTexture() {
+  const size = 128;
+  const data = new Uint8Array(size * size * 4);
+  for (let i = 0; i < size * size; i += 1) {
+    data[i * 4] = 128 + (Math.random() - 0.5) * 90;
+    data[i * 4 + 1] = 128 + (Math.random() - 0.5) * 90;
+    data[i * 4 + 2] = 255;
+    data[i * 4 + 3] = 255;
+  }
+  const t = new THREE.DataTexture(data, size, size);
+  t.wrapS = THREE.RepeatWrapping;
+  t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(6, 6);
+  t.needsUpdate = true;
+  return t;
+}
+
+function logoTexture() {
+  const [c, ctx] = canvas(512, 192);
+  ctx.clearRect(0, 0, 512, 192);
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '900 150px "Grenze Gotisch", Georgia, serif';
+  ctx.fillText('Forja', 256, 104);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+function glowTexture() {
+  const [c, ctx] = canvas(256, 256);
+  const g = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+  g.addColorStop(0, 'rgba(214, 34, 26, 0.62)');
+  g.addColorStop(0.45, 'rgba(140, 14, 12, 0.22)');
+  g.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 256, 256);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+// ── Formas ──────────────────────────────────────────────────────────────
+function shapeFrom(points) {
+  const s = new THREE.Shape();
+  points.forEach(([x, y], i) => (i ? s.lineTo(x, y) : s.moveTo(x, y)));
+  s.closePath();
+  return s;
+}
 
 function bodyShape() {
   const s = new THREE.Shape();
@@ -37,189 +162,274 @@ function bodyShape() {
   s.lineTo(0.86, -1.61);
   s.quadraticCurveTo(1.07, -1.58, 1.02, -1.38);
   s.lineTo(0.24, 0.44);
-  s.quadraticCurveTo(0, 0.6, -0.24, 0.44);
+  s.quadraticCurveTo(0, 0.62, -0.24, 0.44);
   return s;
 }
 
-function headShape() {
+function mirror(left) {
+  return [...left, ...left.slice().reverse().map(([x, y]) => [-x, y])];
+}
+
+const PICKGUARD = mirror([[-0.2, 0.37], [-0.63, -0.6], [-0.53, -0.84], [-0.26, -0.86], [-0.11, -0.63], [-0.02, -0.53]]);
+const HEAD = [[-0.11, 0], [-0.235, 0.5], [-0.2, 0.66], [0, 0.86], [0.2, 0.66], [0.235, 0.5], [0.11, 0]];
+
+function roundedRect(w, h, r) {
   const s = new THREE.Shape();
-  s.moveTo(-0.11, 0);
-  s.lineTo(-0.22, 0.62);
-  s.lineTo(0, 0.82);
-  s.lineTo(0.22, 0.62);
-  s.lineTo(0.11, 0);
-  s.lineTo(-0.11, 0);
+  const x = -w / 2;
+  const y = -h / 2;
+  s.moveTo(x + r, y);
+  s.lineTo(x + w - r, y);
+  s.quadraticCurveTo(x + w, y, x + w, y + r);
+  s.lineTo(x + w, y + h - r);
+  s.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  s.lineTo(x + r, y + h);
+  s.quadraticCurveTo(x, y + h, x, y + h - r);
+  s.lineTo(x, y + r);
+  s.quadraticCurveTo(x, y, x + r, y);
   return s;
 }
 
 // Cilindro fino entre dois pontos (cordas).
-function rod(a, b, r, mat) {
+function rod(a, b, r, mat, seg = 6) {
   const dir = new THREE.Vector3().subVectors(b, a);
-  const geo = new THREE.CylinderGeometry(r, r, dir.length(), 6, 1, true);
+  const geo = new THREE.CylinderGeometry(r, r, dir.length(), seg, 1, true);
   const m = new THREE.Mesh(geo, mat);
   m.position.copy(a).addScaledVector(dir, 0.5);
   m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
   return m;
 }
 
-function buildGuitar(paintName, lowQuality) {
-  const p = PAINTS[paintName] ?? PAINTS['Madeira crua'];
-  const hw = HARDWARE[p.hardware];
-  const seg = lowQuality ? 8 : 18;
+const disc = (r, h, seg = 20) => new THREE.CylinderGeometry(r, r, h, seg).rotateX(Math.PI / 2);
 
-  const paint = new THREE.MeshPhysicalMaterial({
-    color: p.body, roughness: p.roughness, metalness: p.metalness, clearcoat: p.clearcoat, clearcoatRoughness: 0.08,
-  });
-  const metal = new THREE.MeshStandardMaterial(hw);
-  const nickel = new THREE.MeshStandardMaterial({ color: 0xcfcfcf, metalness: 1, roughness: 0.22 });
-  const board = new THREE.MeshStandardMaterial({ color: 0x24160f, roughness: 0.82 });
-  const maple = new THREE.MeshStandardMaterial({ color: p.metalness > 0.5 ? 0x1a1a1a : p.body, roughness: 0.4 });
-  const black = new THREE.MeshStandardMaterial({ color: 0x0d0d0d, roughness: 0.45 });
-  const pearl = new THREE.MeshStandardMaterial({ color: 0xf1ece0, roughness: 0.3 });
-  const bone = new THREE.MeshStandardMaterial({ color: 0xeae2cf, roughness: 0.5 });
+// ── Guitarra ────────────────────────────────────────────────────────────
+function buildGuitar(hq, maxAniso) {
+  const seg = hq ? 24 : 12;
+  const tex = { wood: woodTexture(maxAniso), rose: rosewoodTexture(maxAniso), flake: flakeTexture(), logo: logoTexture() };
+
+  const mats = {
+    paint: new THREE.MeshPhysicalMaterial({ clearcoatRoughness: 0.06 }),
+    guard: new THREE.MeshPhysicalMaterial({ roughness: 0.38, clearcoat: 0.6, clearcoatRoughness: 0.1 }),
+    metal: new THREE.MeshStandardMaterial(HARDWARE.chrome),
+    nickel: new THREE.MeshStandardMaterial({ color: 0xcfcfcf, metalness: 1, roughness: 0.2 }),
+    board: new THREE.MeshStandardMaterial({ map: tex.rose, roughness: 0.78 }),
+    plastic: new THREE.MeshStandardMaterial({ color: 0x0f0f0f, roughness: 0.42 }),
+    knob: new THREE.MeshStandardMaterial({ color: 0x0f0f0f, roughness: 0.4 }),
+    bone: new THREE.MeshStandardMaterial({ color: 0xece3cf, roughness: 0.5 }),
+    pearl: new THREE.MeshPhysicalMaterial({
+      color: 0xf4efe6, roughness: 0.22, iridescence: 1, iridescenceIOR: 1.35, iridescenceThicknessRange: [180, 480],
+    }),
+    plain: new THREE.MeshStandardMaterial({ color: 0xe8e8e8, metalness: 1, roughness: 0.24 }),
+    wound: new THREE.MeshStandardMaterial({ color: 0xc9c2b4, metalness: 1, roughness: 0.42 }),
+    logo: new THREE.MeshStandardMaterial({ map: tex.logo, color: 0xd8aa4c, metalness: 0.9, roughness: 0.28, transparent: true, alphaTest: 0.35 }),
+    cream: new THREE.MeshStandardMaterial({ color: 0xeee2c4, roughness: 0.4 }),
+    dark: new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 0.6 }),
+  };
 
   const g = new THREE.Group();
-
-  // Corpo
-  const bodyGeo = new THREE.ExtrudeGeometry(bodyShape(), {
-    depth: 0.16, bevelEnabled: true, bevelThickness: 0.025, bevelSize: 0.025, bevelSegments: lowQuality ? 2 : 4, curveSegments: seg,
-  });
-  bodyGeo.translate(0, 0, -0.08);
-  g.add(new THREE.Mesh(bodyGeo, paint));
-  const front = 0.105;
-
-  // Braço e escala
-  const neck = new THREE.Mesh(new THREE.BoxGeometry(0.19, NUT_Y - 0.3, 0.07), maple);
-  neck.position.set(0, (NUT_Y + 0.3) / 2, front + 0.0);
-  g.add(neck);
-  const boardTop = front + 0.035 + 0.03;
-  const fb = new THREE.Mesh(new THREE.BoxGeometry(0.2, NUT_Y - fretY(FRETS) + 0.06, 0.03), board);
-  fb.position.set(0, (NUT_Y + fretY(FRETS) - 0.06) / 2, front + 0.035 + 0.015);
-  g.add(fb);
-
-  const fretGeo = new THREE.BoxGeometry(0.2, 0.008, 0.012);
-  for (let n = 1; n <= FRETS; n += 1) {
-    const f = new THREE.Mesh(fretGeo, nickel);
-    f.position.set(0, fretY(n), boardTop + 0.006);
-    g.add(f);
-  }
-  const nut = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.03, 0.03), bone);
-  nut.position.set(0, NUT_Y, boardTop + 0.012);
-  g.add(nut);
-
-  const dotGeo = new THREE.CylinderGeometry(0.022, 0.022, 0.004, 16);
-  const dot = (x, n) => {
-    const d = new THREE.Mesh(dotGeo, pearl);
-    d.rotation.x = Math.PI / 2;
-    d.position.set(x, (fretY(n) + fretY(n - 1)) / 2, boardTop + 0.001);
-    g.add(d);
+  const add = (geo, mat, x = 0, y = 0, z = 0) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    g.add(m);
+    return m;
   };
-  [3, 5, 7, 9, 15, 17, 19, 21].forEach((n) => dot(0, n));
-  dot(-0.05, 12);
-  dot(0.05, 12);
 
-  // Mão (headstock) em ponta de flecha, inclinada para trás
-  const headGeo = new THREE.ExtrudeGeometry(headShape(), {
-    depth: 0.06, bevelEnabled: true, bevelThickness: 0.01, bevelSize: 0.01, bevelSegments: 2,
+  // Corpo com borda arredondada
+  const bodyGeo = new THREE.ExtrudeGeometry(bodyShape(), {
+    depth: BODY_D, bevelEnabled: true, bevelThickness: BEVEL, bevelSize: 0.028, bevelSegments: hq ? 7 : 3, curveSegments: seg,
   });
+  bodyGeo.translate(0, 0, -BODY_D / 2);
+  add(bodyGeo, mats.paint);
+
+  // Escudo
+  const guardGeo = new THREE.ExtrudeGeometry(shapeFrom(PICKGUARD), {
+    depth: 0.008, bevelEnabled: true, bevelThickness: 0.003, bevelSize: 0.004, bevelSegments: 2, curveSegments: 4,
+  });
+  add(guardGeo, mats.guard, 0, 0, FRONT);
+  const gTop = FRONT + 0.014;
+
+  // Braço com costas arredondadas e afinando para a pestana
+  const neckLen = NUT_Y - NECK_START;
+  const profile = new THREE.Shape();
+  profile.moveTo(-0.1, 0);
+  for (let i = 0; i <= 16; i += 1) {
+    const a = (i / 16) * Math.PI;
+    profile.lineTo(0.1 * Math.cos(a), 0.085 * Math.sin(a));
+  }
+  profile.lineTo(0.1, 0);
+  const neckGeo = new THREE.ExtrudeGeometry(profile, { depth: neckLen, bevelEnabled: false, curveSegments: 4 });
+  neckGeo.rotateX(-Math.PI / 2);
+  const pos = neckGeo.attributes.position;
+  for (let i = 0; i < pos.count; i += 1) {
+    const t = pos.getY(i) / neckLen;
+    pos.setX(i, pos.getX(i) * (1 - 0.13 * t));
+  }
+  neckGeo.computeVertexNormals();
+  add(neckGeo, mats.paint, 0, NECK_START, NECK_TOP);
+
+  // Escala de jacarandá
+  const boardLen = NUT_Y - BOARD_END;
+  const boardGeo = new THREE.BoxGeometry(0.215, boardLen, BOARD_T, 1, 8, 1);
+  const bp = boardGeo.attributes.position;
+  for (let i = 0; i < bp.count; i += 1) {
+    const y = bp.getY(i) + boardLen / 2 + BOARD_END;
+    bp.setX(i, Math.sign(bp.getX(i)) * boardHalf(y));
+  }
+  boardGeo.computeVertexNormals();
+  tex.rose.repeat.set(1, 1);
+  add(boardGeo, mats.board, 0, BOARD_END + boardLen / 2, NECK_TOP + BOARD_T / 2);
+
+  // Trastes arredondados (uma malha instanciada)
+  const fretGeo = new THREE.CylinderGeometry(0.0065, 0.0065, 1, hq ? 10 : 6).rotateZ(Math.PI / 2);
+  const frets = new THREE.InstancedMesh(fretGeo, mats.nickel, FRETS);
+  const m4 = new THREE.Matrix4();
+  for (let n = 1; n <= FRETS; n += 1) {
+    const y = fretY(n);
+    m4.compose(new THREE.Vector3(0, y, BOARD_TOP), new THREE.Quaternion(), new THREE.Vector3(boardHalf(y) * 2 - 0.004, 1, 1));
+    frets.setMatrixAt(n - 1, m4);
+  }
+  g.add(frets);
+
+  // Marcações de madrepérola
+  const dots = [3, 5, 7, 9, 15, 17, 19, 21].map((n) => [0, n]).concat([[-0.045, 12], [0.045, 12]]);
+  const inlays = new THREE.InstancedMesh(disc(0.019, 0.004), mats.pearl, dots.length);
+  dots.forEach(([x, n], i) => {
+    m4.makeTranslation(x, (fretY(n) + fretY(n - 1)) / 2, BOARD_TOP);
+    inlays.setMatrixAt(i, m4);
+  });
+  g.add(inlays);
+
+  // Pestana
+  add(new THREE.BoxGeometry(0.182, 0.03, 0.028), mats.bone, 0, NUT_Y + 0.005, BOARD_TOP + 0.008);
+
+  // Mão em ponta de flecha, inclinada para trás
   const head = new THREE.Group();
-  const headMesh = new THREE.Mesh(headGeo, paint);
+  const headGeo = new THREE.ExtrudeGeometry(shapeFrom(HEAD), {
+    depth: 0.055, bevelEnabled: true, bevelThickness: 0.008, bevelSize: 0.008, bevelSegments: 2, curveSegments: 4,
+  });
+  const headMesh = new THREE.Mesh(headGeo, mats.paint);
   headMesh.position.z = -0.03;
   head.add(headMesh);
-  // Tarraxas: pino na frente, perto da borda; botão saindo pela lateral.
-  const postGeo = new THREE.CylinderGeometry(0.016, 0.016, 0.07, 10);
-  const shaftGeo = new THREE.CylinderGeometry(0.008, 0.008, 0.05, 8);
-  const keyGeo = new THREE.BoxGeometry(0.05, 0.04, 0.016);
-  const edgeX = (y) => 0.11 + (0.11 * y) / 0.62;
+  const face = 0.033;
+  const back = -0.038;
+  const logo = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.1125), mats.logo);
+  logo.position.set(0, 0.41, face + 0.002);
+  head.add(logo);
+  const truss = new THREE.Mesh(new THREE.ExtrudeGeometry(shapeFrom([[-0.03, 0.05], [0.03, 0.05], [0.045, 0.2], [-0.045, 0.2]]), { depth: 0.004, bevelEnabled: false }), mats.plastic);
+  truss.position.z = face;
+  head.add(truss);
+  const edgeX = (y) => 0.11 + 0.25 * Math.min(y, 0.5);
+  const posts = [];
   [0.16, 0.32, 0.48].forEach((y) => {
     [-1, 1].forEach((side) => {
-      const edge = edgeX(y);
-      const post = new THREE.Mesh(postGeo, metal);
-      post.rotation.x = Math.PI / 2;
-      post.position.set(side * (edge - 0.045), y, 0.06);
-      head.add(post);
-      const shaft = new THREE.Mesh(shaftGeo, metal);
-      shaft.rotation.z = Math.PI / 2;
-      shaft.position.set(side * (edge + 0.02), y, 0);
-      head.add(shaft);
-      const key = new THREE.Mesh(keyGeo, metal);
-      key.position.set(side * (edge + 0.065), y, 0);
-      head.add(key);
+      const ex = edgeX(y);
+      const bush = new THREE.Mesh(disc(0.022, 0.008, 16), mats.metal);
+      bush.position.set(side * (ex - 0.06), y, face + 0.004);
+      const post = new THREE.Mesh(disc(0.011, 0.05, 12), mats.metal);
+      post.position.set(side * (ex - 0.06), y, face + 0.03);
+      const housing = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.06, 0.034), mats.metal);
+      housing.position.set(side * (ex - 0.045), y, back - 0.018);
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.07, 8).rotateZ(Math.PI / 2), mats.metal);
+      shaft.position.set(side * (ex + 0.02), y, back - 0.018);
+      const button = new THREE.Mesh(new THREE.SphereGeometry(0.036, 16, 10), mats.metal);
+      button.scale.set(1, 0.3, 0.85);
+      button.position.set(side * (ex + 0.075), y, back - 0.018);
+      head.add(bush, post, housing, shaft, button);
+      posts.push({ side, y, obj: post });
     });
   });
-  head.position.set(0, NUT_Y + 0.02, front + 0.05);
-  head.rotation.x = -0.22;
+  head.position.set(0, NUT_Y + 0.02, NECK_TOP - 0.012);
+  head.rotation.x = -0.24;
   g.add(head);
 
-  // Captadores
-  const pickupGeo = new THREE.BoxGeometry(0.36, 0.14, 0.035);
-  const poleGeo = new THREE.CylinderGeometry(0.011, 0.011, 0.01, 8);
-  [0.27, -0.06].forEach((y) => {
-    const pu = new THREE.Mesh(pickupGeo, black);
-    pu.position.set(0, y, front + 0.018);
-    g.add(pu);
-    for (let i = 0; i < 6; i += 1) {
-      const pole = new THREE.Mesh(poleGeo, metal);
-      pole.rotation.x = Math.PI / 2;
-      pole.position.set(-0.125 + i * 0.05, y + 0.03, front + 0.04);
-      g.add(pole);
-    }
+  // Captadores humbucker com moldura e capa
+  const ringShape = roundedRect(0.44, 0.22, 0.03);
+  ringShape.holes.push(roundedRect(0.37, 0.155, 0.015));
+  const ringGeo = new THREE.ExtrudeGeometry(ringShape, { depth: 0.016, bevelEnabled: true, bevelThickness: 0.003, bevelSize: 0.003, bevelSegments: 1, curveSegments: 4 });
+  const coverGeo = new THREE.ExtrudeGeometry(roundedRect(0.36, 0.148, 0.012), {
+    depth: 0.024, bevelEnabled: true, bevelThickness: 0.006, bevelSize: 0.006, bevelSegments: hq ? 3 : 1, curveSegments: 4,
+  });
+  const screwGeo = disc(0.008, 0.004, 8);
+  [0.3, -0.1].forEach((y) => {
+    add(ringGeo, mats.plastic, 0, y, gTop - 0.004);
+    add(coverGeo, mats.metal, 0, y, gTop);
+    [[-0.195, 0.085], [0.195, 0.085], [-0.195, -0.085], [0.195, -0.085]].forEach(([sx, sy]) => add(screwGeo, mats.metal, sx, y + sy, gTop + 0.014));
   });
 
-  // Ponte e cordal em V
-  const bridge = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.05, 0.045), metal);
-  bridge.position.set(0, BRIDGE_Y, front + 0.03);
-  g.add(bridge);
-  const tailShape = new THREE.Shape();
-  tailShape.moveTo(-0.16, 0);
-  tailShape.lineTo(0.16, 0);
-  tailShape.lineTo(0, -0.2);
-  tailShape.lineTo(-0.16, 0);
-  const tail = new THREE.Mesh(new THREE.ExtrudeGeometry(tailShape, { depth: 0.01, bevelEnabled: false }), metal);
-  tail.position.set(0, -0.4, front);
-  g.add(tail);
-
-  // Controles no corpo
-  const knobGeo = new THREE.CylinderGeometry(0.045, 0.05, 0.05, 20);
-  [[0.5, -0.95], [0.72, -1.08], [0.62, -1.3]].forEach(([x, y]) => {
-    const k = new THREE.Mesh(knobGeo, p.hardware === 'gold' ? metal : black);
-    k.rotation.x = Math.PI / 2;
-    k.position.set(x, y, front + 0.025);
-    g.add(k);
+  // Ponte com 6 rastilhos, parafusos de altura e placa em V
+  add(new THREE.BoxGeometry(0.36, 0.032, 0.026), mats.metal, 0, BRIDGE_Y, FRONT + 0.062);
+  const stringX = (i, half) => -half + (i * 2 * half) / 5;
+  for (let i = 0; i < 6; i += 1) add(new THREE.BoxGeometry(0.024, 0.026, 0.016), mats.metal, stringX(i, 0.1), BRIDGE_Y, FRONT + 0.082);
+  [-0.2, 0.2].forEach((x) => {
+    add(new THREE.CylinderGeometry(0.012, 0.012, 0.07, 10).rotateX(Math.PI / 2), mats.metal, x, BRIDGE_Y, FRONT + 0.035);
+    add(disc(0.027, 0.012, 18), mats.metal, x, BRIDGE_Y, FRONT + 0.034);
   });
-  const sw = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.02, 16), metal);
+  const plate = new THREE.ExtrudeGeometry(shapeFrom([[-0.16, 0], [0.16, 0], [0.025, -0.17], [-0.025, -0.17]]), {
+    depth: 0.005, bevelEnabled: true, bevelThickness: 0.003, bevelSize: 0.004, bevelSegments: 1,
+  });
+  add(plate, mats.metal, 0, TAIL_Y + 0.025, FRONT);
+  for (let i = 0; i < 6; i += 1) add(disc(0.009, 0.006, 10), mats.dark, stringX(i, 0.095), TAIL_Y, FRONT + 0.008);
+
+  // Knobs "top hat" e chave seletora
+  [[0.4, -0.62], [0.57, -0.76], [0.4, -0.84]].forEach(([x, y]) => {
+    add(disc(0.06, 0.008, 24), mats.metal, x, y, gTop + 0.004);
+    add(disc(0.05, 0.034, 24), mats.knob, x, y, gTop + 0.025);
+    add(disc(0.042, 0.03, 24), mats.knob, x, y, gTop + 0.055);
+    add(disc(0.03, 0.004, 20), mats.metal, x, y, gTop + 0.072);
+  });
+  add(new THREE.TorusGeometry(0.03, 0.006, 8, 24), mats.metal, -0.4, -0.3, gTop + 0.004);
+  const sw = add(new THREE.CylinderGeometry(0.005, 0.005, 0.09, 8), mats.metal, -0.4, -0.3, gTop + 0.045);
   sw.rotation.x = Math.PI / 2;
-  sw.position.set(-0.42, -0.42, front + 0.01);
-  g.add(sw);
-  const swTip = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.09, 8), metal);
-  swTip.rotation.x = Math.PI / 2;
-  swTip.position.set(-0.42, -0.42, front + 0.06);
-  g.add(swTip);
+  sw.rotation.z = 0.35;
+  add(new THREE.SphereGeometry(0.015, 12, 10), mats.cream, -0.415, -0.3, gTop + 0.09);
 
-  // Cordas
-  const strings = new THREE.Group();
-  const stringMat = new THREE.MeshStandardMaterial({ color: 0xe6e6e6, metalness: 1, roughness: 0.25 });
+  // Cordas: placa → rastilho → pestana → pino da tarraxa
+  g.updateMatrixWorld(true);
+  const vib = [];
+  const radii = [0.0052, 0.0044, 0.0036, 0.0028, 0.0022, 0.0018];
+  // Mi grave vai na tarraxa de cima à esquerda; Mi agudo na de cima à direita.
+  const order = [[-1, 0.48], [-1, 0.32], [-1, 0.16], [1, 0.16], [1, 0.32], [1, 0.48]];
   for (let i = 0; i < 6; i += 1) {
-    const t = i / 5 - 0.5;
-    const a = new THREE.Vector3(t * 0.15, NUT_Y, boardTop + 0.028);
-    const b = new THREE.Vector3(t * 0.21, BRIDGE_Y, front + 0.055);
-    strings.add(rod(a, b, 0.0035 + (5 - i) * 0.0009, stringMat));
+    const mat = i < 3 ? mats.wound : mats.plain;
+    const r = radii[i];
+    const anchor = new THREE.Vector3(stringX(i, 0.095), TAIL_Y, FRONT + 0.012);
+    const saddle = new THREE.Vector3(stringX(i, 0.1), BRIDGE_Y, SADDLE_Z);
+    const nut = new THREE.Vector3(stringX(i, 0.074), NUT_Y + 0.005, BOARD_TOP + 0.022);
+    const [side, y] = order[i];
+    const target = posts.find((p) => p.side === side && p.y === y).obj;
+    const postWorld = target.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0, 0.008));
+    g.add(rod(anchor, saddle, r, mat));
+    const speaking = rod(saddle, nut, r, mat, hq ? 6 : 4);
+    speaking.userData.baseX = speaking.position.x;
+    vib.push(speaking);
+    g.add(speaking);
+    g.add(rod(nut, postWorld, r, mat));
   }
-  g.add(strings);
 
-  // Centraliza: o meio da guitarra fica na origem.
+  // Centraliza na origem
   const box = new THREE.Box3().setFromObject(g);
   const center = box.getCenter(new THREE.Vector3());
-  const pivot = new THREE.Group();
   g.position.sub(center);
+  const pivot = new THREE.Group();
   pivot.add(g);
-  return { pivot, strings, radius: box.getSize(new THREE.Vector3()).length() / 2 };
+  return {
+    pivot, vib, mats, tex, radius: box.getSize(new THREE.Vector3()).length() / 2,
+  };
 }
 
-export function createGuitar(canvas, paintName) {
-  const lowQuality = matchMedia('(max-width: 760px), (pointer: coarse)').matches;
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, lowQuality ? 1.5 : 2));
+// ── Palco ───────────────────────────────────────────────────────────────
+const POSES = {
+  hero: { x: 0.16, y: -0.42, z: -0.62 },
+  heroWide: { x: 0.14, y: -0.4, z: -1.2 },
+  stage: { x: 0.12, y: -0.38, z: -0.42 },
+};
+
+export async function createStage() {
+  try { await document.fonts.load('900 80px "Grenze Gotisch"'); } catch { /* sem a fonte, o logo usa Georgia */ }
+  const hq = !matchMedia('(max-width: 760px), (pointer: coarse)').matches;
+  const canvasEl = document.createElement('canvas');
+  canvasEl.setAttribute('aria-hidden', 'true');
+  const renderer = new THREE.WebGLRenderer({ canvas: canvasEl, antialias: true, alpha: true, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, hq ? 2 : 1.6));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -228,145 +438,246 @@ export function createGuitar(canvas, paintName) {
   const pmrem = new THREE.PMREMGenerator(renderer);
   const envRT = pmrem.fromScene(new RoomEnvironment(), 0.04);
   scene.environment = envRT.texture;
-  scene.environmentIntensity = 0.55;
+  scene.environmentIntensity = 0.7;
 
-  const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
-
-  // Luz de palco: principal quente de cima, contra-luz vermelha atrás.
-  const key = new THREE.DirectionalLight(0xfff1dc, 2.2);
+  const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
+  const key = new THREE.DirectionalLight(0xfff0d8, 2.4);
   key.position.set(-3, 5, 6);
-  const rim = new THREE.DirectionalLight(0xff2a1a, 0);
+  const rim = new THREE.DirectionalLight(0xff2a1a, 2.4);
   rim.position.set(4, 2, -5);
-  const fill = new THREE.DirectionalLight(0x9fb4ff, 0.35);
+  const fill = new THREE.DirectionalLight(0x9fb4ff, 0.4);
   fill.position.set(5, -2, 4);
   scene.add(key, rim, fill);
 
-  const { pivot, strings, radius } = buildGuitar(paintName, lowQuality);
+  const guitar = buildGuitar(hq, renderer.capabilities.getMaxAnisotropy());
+  const { pivot, vib, mats } = guitar;
   scene.add(pivot);
 
-  // Fundo do palco: um pano escuro e um canhão de luz vermelha atrás da guitarra.
-  // Brilho de palco atrás da guitarra: textura sem luz, não tinge a pintura.
-  const glowCanvas = document.createElement('canvas');
-  glowCanvas.width = 256;
-  glowCanvas.height = 256;
-  const gctx = glowCanvas.getContext('2d');
-  const grad = gctx.createRadialGradient(128, 128, 0, 128, 128, 128);
-  grad.addColorStop(0, 'rgba(210, 30, 24, 0.6)');
-  grad.addColorStop(0.45, 'rgba(140, 14, 12, 0.22)');
-  grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-  gctx.fillStyle = grad;
-  gctx.fillRect(0, 0, 256, 256);
-  const glowTex = new THREE.CanvasTexture(glowCanvas);
-  glowTex.colorSpace = THREE.SRGBColorSpace;
+  const glowTex = glowTexture();
   const glow = new THREE.Mesh(
-    new THREE.PlaneGeometry(radius * 3.2, radius * 3.2),
+    new THREE.PlaneGeometry(guitar.radius * 2.6, guitar.radius * 2.6),
+    // Mistura aditiva que não escreve alfa: o brilho soma luz sobre a página
+    // (o número da ofensiva atrás continua claro) em vez de cobri-la.
     new THREE.MeshBasicMaterial({
-      map: glowTex, transparent: true, depthWrite: false, opacity: 0, toneMapped: false,
+      map: glowTex,
+      transparent: true,
+      depthWrite: false,
+      toneMapped: false,
+      blending: THREE.CustomBlending,
+      blendEquation: THREE.AddEquation,
+      blendSrc: THREE.SrcAlphaFactor,
+      blendDst: THREE.OneFactor,
+      blendSrcAlpha: THREE.ZeroFactor,
+      blendDstAlpha: THREE.OneFactor,
     }),
   );
   glow.position.set(0, 0.1, -3);
   scene.add(glow);
 
-  // Pose: inclinada como num pôster, um pouco de lado.
-  const pose = { x: 0.12, y: -0.38, z: -0.42 };
-  pivot.rotation.set(pose.x, pose.y, pose.z);
+  // Estado
+  let host = null;
+  let mode = 'hero';
+  let pose = POSES.hero;
+  let raf = 0;
+  let awakeUntil = 0;
+  let visible = true;
+  let userY = 0;
+  let spin = 0;
+  let drag = null;
+  let strumAt = -10;
+  let onTap = null;
+  const clock = new THREE.Clock();
+  const ro = new ResizeObserver(() => { resize(); wake(0.2); });
+  const io = new IntersectionObserver(([e]) => { visible = e.isIntersecting; if (visible) wake(0.5); });
 
-  let wide = true;
-  const resize = () => {
-    const w = canvas.clientWidth || window.innerWidth;
-    const h = canvas.clientHeight || window.innerHeight;
+  function applyPaint(name) {
+    const p = PAINTS[name] ?? PAINTS['Madeira crua'];
+    const m = mats.paint;
+    m.color.set(p.color);
+    m.map = p.wood ? guitar.tex.wood : null;
+    m.normalMap = p.flake ? guitar.tex.flake : null;
+    m.normalScale = new THREE.Vector2(0.12, 0.12);
+    m.roughness = p.roughness;
+    m.metalness = p.metalness;
+    m.clearcoat = p.clearcoat;
+    m.needsUpdate = true;
+    mats.guard.color.set(p.guard);
+    const hw = HARDWARE[p.hardware];
+    mats.metal.color.set(hw.color);
+    mats.metal.metalness = hw.metalness;
+    mats.metal.roughness = hw.roughness;
+    const goldKnobs = p.hardware === 'gold';
+    mats.knob.color.set(goldKnobs ? hw.color : 0x0f0f0f);
+    mats.knob.metalness = goldKnobs ? 1 : 0;
+    mats.knob.roughness = goldKnobs ? 0.24 : 0.4;
+  }
+
+  function resize() {
+    if (!host) return;
+    const w = host.clientWidth || 1;
+    const h = host.clientHeight || 1;
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
-    wide = w > h * 1.1;
+    const wide = w > h * 1.1;
     const vfov = THREE.MathUtils.degToRad(camera.fov);
     const hfov = 2 * Math.atan(Math.tan(vfov / 2) * camera.aspect);
-    const fit = radius * (wide ? 1.0 : 0.84);
-    const dist = fit / Math.sin(Math.min(vfov, hfov) / 2);
+    let fit;
+    let ox;
+    let oy;
+    if (mode === 'hero') {
+      pose = wide ? POSES.heroWide : POSES.hero;
+      fit = wide ? 0.66 : 0.74;
+      ox = wide ? -w * 0.15 : -w * 0.16;
+      oy = wide ? h * 0.2 : h * 0.05;
+    } else {
+      pose = POSES.stage;
+      fit = wide ? 0.95 : 0.84;
+      ox = wide ? -w * 0.16 : 0;
+      oy = wide ? 0 : h * 0.12;
+    }
+    const dist = (guitar.radius * fit) / Math.sin(Math.min(vfov, hfov) / 2);
     camera.position.set(0, 0, dist);
-    // Deixa espaço para o texto: à esquerda no desktop, embaixo no celular.
-    camera.setViewOffset(w, h, wide ? -w * 0.16 : 0, wide ? 0 : h * 0.12, w, h);
+    camera.setViewOffset(w, h, ox, oy, w, h);
     camera.updateProjectionMatrix();
-  };
-  resize();
-  window.addEventListener('resize', resize);
+  }
 
-  // Arrastar para girar, com inércia.
-  let drag = null;
-  let spin = 0;
-  let userY = 0;
-  const down = (e) => { drag = e.clientX; spin = 0; canvas.setPointerCapture(e.pointerId); };
-  const move = (e) => {
+  function frame() {
+    raf = 0;
+    if (!host || !visible || document.hidden) return;
+    const t = clock.getElapsedTime();
+    if (drag === null) {
+      userY += spin;
+      spin *= 0.93;
+    }
+    pivot.rotation.y = pose.y + userY + Math.sin(t * 0.55) * 0.12;
+    pivot.rotation.x = pose.x + Math.sin(t * 0.4) * 0.03;
+    const since = t - strumAt;
+    vib.forEach((s, i) => {
+      const amp = since > 0 && since < 1.6 ? 0.0024 * (1 - since / 1.6) * (1 + i * 0.12) : 0;
+      s.position.x = s.userData.baseX + Math.sin(t * (70 + i * 9)) * amp;
+    });
+    renderer.render(scene, camera);
+    if (performance.now() < awakeUntil || drag !== null || Math.abs(spin) > 0.0005) raf = requestAnimationFrame(frame);
+  }
+
+  function wake(seconds = 1) {
+    awakeUntil = Math.max(awakeUntil, performance.now() + seconds * 1000);
+    if (!raf) raf = requestAnimationFrame(frame);
+  }
+
+  // Arrastar gira; toque rápido "toca" a guitarra.
+  let downAt = 0;
+  let downX = 0;
+  let downY = 0;
+  canvasEl.addEventListener('pointerdown', (e) => {
+    drag = e.clientX;
+    downAt = performance.now();
+    downX = e.clientX;
+    downY = e.clientY;
+    spin = 0;
+    wake(0.5);
+  });
+  canvasEl.addEventListener('pointermove', (e) => {
     if (drag === null) return;
     const dx = e.clientX - drag;
     drag = e.clientX;
-    spin = dx * 0.012;
+    spin = dx * 0.011;
     userY += spin;
-  };
-  const up = () => { drag = null; };
-  canvas.addEventListener('pointerdown', down);
-  canvas.addEventListener('pointermove', move);
-  canvas.addEventListener('pointerup', up);
-  canvas.addEventListener('pointercancel', up);
-
-  const clock = new THREE.Clock();
-  let introDone = false;
-  let strumAt = -10;
-  let raf = 0;
-  const tick = () => {
-    const t = clock.getElapsedTime();
-    if (introDone) {
-      if (drag === null) {
-        userY += spin;
-        spin *= 0.94;
-      }
-      pivot.rotation.y = pose.y + userY + Math.sin(t * 0.6) * 0.18;
-      pivot.rotation.x = pose.x + Math.sin(t * 0.45) * 0.04;
+    wake(0.5);
+  });
+  const release = (e) => {
+    if (drag === null) return;
+    drag = null;
+    const quick = performance.now() - downAt < 260;
+    const still = Math.hypot(e.clientX - downX, e.clientY - downY) < 8;
+    if (e.type === 'pointerup' && quick && still) {
+      strum();
+      onTap?.();
     }
-    // Cordas vibrando no "acorde" do flash de luz, apagando em 1,5 s.
-    const since = t - strumAt;
-    strings.position.x = since > 0 && since < 1.5 ? Math.sin(t * 90) * 0.0014 * (1 - since / 1.5) : 0;
-    renderer.render(scene, camera);
-    raf = requestAnimationFrame(tick);
+    wake(1.5);
   };
-  tick();
+  canvasEl.addEventListener('pointerup', release);
+  canvasEl.addEventListener('pointercancel', release);
+  canvasEl.addEventListener('pointerleave', release);
 
-  // Entrada: a guitarra vem girando do fundo do palco; a contra-luz explode.
-  function intro(gsap) {
-    if (!gsap) {
-      introDone = true;
-      rim.intensity = 2.4;
-      glow.material.opacity = 1;
-      return;
+  function strum() {
+    strumAt = clock.getElapsedTime();
+    const gsap = window.gsap;
+    if (gsap) {
+      gsap.fromTo(pivot.rotation, { z: pose.z + 0.05 }, { z: pose.z, duration: 0.7, ease: 'elastic.out(1, 0.35)' });
+      gsap.fromTo(rim, { intensity: 6 }, { intensity: 2.4, duration: 0.9, ease: 'power2.out' });
+      gsap.fromTo(glow.scale, { x: 1.15, y: 1.15 }, { x: 1, y: 1, duration: 0.9, ease: 'power2.out' });
     }
-    pivot.position.z = -16;
-    pivot.rotation.y = pose.y - Math.PI * 3;
-    pivot.rotation.x = pose.x + 0.5;
-    const tl = gsap.timeline({ onComplete: () => { introDone = true; } });
-    tl.call(() => { strumAt = clock.getElapsedTime(); }, null, 1.05)
-      .to(pivot.position, { z: 0, duration: 1.5, ease: 'power4.out' }, 0)
-      .to(pivot.rotation, { y: pose.y, x: pose.x, duration: 1.8, ease: 'power3.out' }, 0)
-      .to(rim, { intensity: 7, duration: 0.18, ease: 'power2.out' }, 1.05)
-      .to(rim, { intensity: 2.4, duration: 1.2, ease: 'power2.out' }, 1.23)
-      .fromTo(glow.scale, { x: 0.6, y: 0.6 }, { x: 1, y: 1, duration: 0.9, ease: 'power3.out' }, 1.05)
-      .to(glow.material, { opacity: 1, duration: 0.25, ease: 'power2.out' }, 1.05);
+    wake(1.8);
   }
 
-  function dispose() {
-    cancelAnimationFrame(raf);
-    window.removeEventListener('resize', resize);
-    pivot.traverse((o) => {
-      if (o.isMesh) {
-        o.geometry.dispose();
-        o.material.dispose();
-      }
-    });
-    glow.geometry.dispose();
-    glow.material.dispose();
-    glowTex.dispose();
-    envRT.dispose();
-    pmrem.dispose();
-    renderer.dispose();
-  }
+  return {
+    mount(el, opts = {}) {
+      host = el;
+      mode = opts.mode ?? 'hero';
+      onTap = opts.onTap ?? null;
+      if (opts.paint) applyPaint(opts.paint);
+      el.appendChild(canvasEl);
+      ro.disconnect();
+      io.disconnect();
+      ro.observe(el);
+      io.observe(el);
+      visible = true;
+      userY = 0;
+      spin = 0;
+      resize();
+      pivot.position.set(0, 0, 0);
+      pivot.rotation.set(pose.x, pose.y, pose.z);
+      wake(2);
+    },
+    unmount() {
+      ro.disconnect();
+      io.disconnect();
+      canvasEl.remove();
+      host = null;
+      onTap = null;
+    },
+    get mountedIn() { return host; },
+    setPaint: applyPaint,
+    strum,
+    wake,
 
-  return { intro, dispose };
+    // Entrada no topo da tela Hoje: a guitarra sobe girando, o palco acende.
+    heroIntro(gsap) {
+      if (!gsap) return;
+      const tl = gsap.timeline({ defaults: { ease: 'power3.out' } });
+      tl.fromTo(pivot.position, { y: -2.6, z: -2 }, { y: 0, z: 0, duration: 1.4 }, 0)
+        .fromTo(pivot.rotation, { y: pose.y - 2.4, z: pose.z + 0.5 }, { y: pose.y, z: pose.z, duration: 1.6 }, 0)
+        .fromTo(glow.material, { opacity: 0 }, { opacity: 1, duration: 0.9 }, 0.5)
+        .fromTo(rim, { intensity: 0 }, { intensity: 6, duration: 0.15, ease: 'power2.out' }, 1.0)
+        .to(rim, { intensity: 2.4, duration: 1.2, ease: 'power2.out' }, 1.15)
+        .call(() => { strumAt = clock.getElapsedTime(); }, null, 1.0);
+      wake(tl.duration() + 3);
+    },
+
+    // Celebração: vem do fundo do palco girando; opcionalmente troca a pintura no clarão.
+    stageIntro(gsap, { from, to } = {}) {
+      if (from) applyPaint(from);
+      if (!gsap) {
+        if (to) applyPaint(to);
+        return;
+      }
+      const tl = gsap.timeline();
+      tl.fromTo(pivot.position, { z: -16 }, { z: 0, duration: 1.5, ease: 'power4.out' }, 0)
+        .fromTo(pivot.rotation, { y: pose.y - Math.PI * 3, x: pose.x + 0.5 }, { y: pose.y, x: pose.x, duration: 1.8, ease: 'power3.out' }, 0)
+        .fromTo(glow.material, { opacity: 0 }, { opacity: 1, duration: 0.3 }, 1.05)
+        .fromTo(glow.scale, { x: 0.6, y: 0.6 }, { x: 1, y: 1, duration: 0.9, ease: 'power3.out' }, 1.05)
+        .to(rim, { intensity: 7, duration: 0.18, ease: 'power2.out' }, 1.05)
+        .to(rim, { intensity: 2.4, duration: 1.2, ease: 'power2.out' }, 1.23)
+        .call(() => { strumAt = clock.getElapsedTime(); }, null, 1.05);
+      if (to) {
+        const target = new THREE.Color(PAINTS[to].color);
+        tl.to(key, { intensity: 6, duration: 0.15 }, 2.0)
+          .call(() => applyPaint(to), null, 2.15)
+          .fromTo(mats.paint.color, { r: 1, g: 1, b: 1 }, { r: target.r, g: target.g, b: target.b, duration: 0.8, ease: 'power2.out' }, 2.15)
+          .to(key, { intensity: 2.4, duration: 0.8, ease: 'power2.out' }, 2.15);
+      }
+      wake(tl.duration() + 4);
+    },
+  };
 }

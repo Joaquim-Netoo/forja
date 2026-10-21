@@ -1,44 +1,53 @@
-/* FORJA — tokens.
-   Preto quente de palco, branco osso, vermelho-sangue só na ação.
-   Dourado e aço aparecem apenas nos patches (medalhas). */
+/* FORJA v2 — "Palco e papel".
+   Palco: escuro granulado, osso, vermelho na ação. Papel: osso claro com tinta.
+   Dourado e aço só nos patches. */
 :root {
   color-scheme: dark;
 
-  --bg: #0c0a08;
-  --surface: #17130f;
-  --surface-2: #221c16;
-  --surface-3: #2e261e;
-  --ink: #f2ece2;
-  --muted: #b2a99c;
-  --faint: #6f675d;
-  --accent: #d32730;
-  --accent-press: #b01e26;
-  --accent-text: #f0545b; /* vermelho para texto pequeno: 5,8:1 sobre o fundo */
-  --accent-ink: #ffffff;
+  /* Palco */
+  --stage: #0b0908;
+  --stage-2: #15110d;
+  --stage-3: #221b15;
+  --stage-4: #30271f;
+  --bone: #efe7da;
+  --bone-dim: #b8ac9c;
+  --bone-faint: #7d7266;
+  --red: #d32730;
+  --red-press: #ad1c24;
+  --red-text: #f0545b; /* vermelho para texto pequeno no palco: 5,8:1 */
   --gold: #c9a45a;
-  --gold-deep: #7a5f2c;
-  --steel: #9aa1aa;
-  --blood: #5c0f13;
+
+  /* Papel */
+  --paper: #ebe3d2;
+  --paper-2: #ded3bd;
+  --paper-3: #cfc2a8;
+  --ink: #1b1612;
+  --ink-2: #594e44; /* 6,9:1 sobre o papel */
+  --pen: #c4161c;
+  --tape: rgb(52 49 45 / 0.88);
 
   --font-display: 'Grenze Gotisch', 'UnifrakturCook', Georgia, serif;
   --font-text: 'Chivo', 'Segoe UI', system-ui, sans-serif;
   /* taste-skill-ignore: TAB é notação em colunas, precisa de largura fixa */
   --font-tab: 'Cascadia Mono', 'JetBrains Mono', Consolas, 'Courier New', monospace; /* taste-skill-ignore */
 
-  /* Cinco tamanhos fazem o trabalho todo. */
-  --step-small: clamp(0.8125rem, 0.79rem + 0.1vw, 0.875rem);
-  --step-body: clamp(1.0625rem, 1rem + 0.25vw, 1.1875rem);
-  --step-lead: clamp(1.375rem, 1.15rem + 0.9vw, 1.875rem);
-  --step-head: clamp(2.5rem, 1.4rem + 4.6vw, 5.25rem);
-  --step-monument: clamp(10rem, 4rem + 34vw, 22rem);
+  /* Escala: texto pequeno, corpo, destaque, título, monumento. */
+  --step-small: clamp(0.875rem, 0.84rem + 0.15vw, 0.9375rem);
+  --step-body: clamp(1.0625rem, 1rem + 0.3vw, 1.1875rem);
+  --step-lead: clamp(1.375rem, 1.2rem + 0.8vw, 1.875rem);
+  --step-head: clamp(2.375rem, 1.6rem + 3.6vw, 4.5rem);
+  --step-monument: clamp(9rem, 5rem + 26vw, 21rem);
 
-  --gutter: clamp(1rem, 0.6rem + 1.6vw, 2rem);
-  --measure: 66ch;
-  --bar-h: 64px;
+  --gutter: clamp(1rem, 0.7rem + 1.4vw, 2rem);
+  --measure: 62ch;
+  --bar-h: 68px;
+  --safe-b: env(safe-area-inset-bottom, 0px);
 
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
   --dur-press: 140ms;
   --dur-ui: 220ms;
+
+  --grain: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .6 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  --twill: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='8' height='8'><path d='M-2 2 2-2M0 8 8 0M6 10 10 6' stroke='%23ffffff' stroke-opacity='.05' stroke-width='1.4'/></svg>");
 }

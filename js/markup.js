@@ -64,9 +64,12 @@ export function chordSVG(name, frets, fingers = '') {
     if (n < 0) out += `<text x="${sx(i)}" y="${y0 - 8}" class="mark">×</text>`;
     else if (n === 0) out += `<circle cx="${sx(i)}" cy="${y0 - 11}" r="3.4" class="open"/>`;
     else {
-      out += `<circle cx="${sx(i)}" cy="${fy(n)}" r="5.4" class="dot"/>`;
+      // Cada dedo é um grupo com a ordem de colocar (data-f), para a animação.
       const fin = fingers[i];
-      if (fin && /\d/.test(fin)) out += `<text x="${sx(i)}" y="${fy(n) + 3.4}" class="fin">${fin}</text>`;
+      const digit = fin && /\d/.test(fin) ? fin : '';
+      out += `<g class="finger" data-f="${digit || 9}"><circle cx="${sx(i)}" cy="${fy(n)}" r="5.4" class="dot"/>`;
+      if (digit) out += `<text x="${sx(i)}" y="${fy(n) + 3.4}" class="fin">${digit}</text>`;
+      out += '</g>';
     }
   });
   if (base > 1) out += `<text x="${x0 + gap * 5 + 6}" y="${fy(base) + 4}" class="base">${base}ª</text>`;

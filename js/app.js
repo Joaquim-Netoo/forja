@@ -11,20 +11,27 @@ import {
   doneDays, session, toggleExercise, setValue, completeLesson, awardMedals, toggleExamItem,
 } from './game.js';
 import {
-  today, streakBlock, dayDoneBanner, countLabel,
+  today, heroCopy, stats, countLabel, footText,
 } from './views/today.js';
 import { course, guide } from './views/course.js';
 import { lesson, notFound } from './views/lesson.js';
 import { exam } from './views/exam.js';
 import { medals } from './views/medals.js';
 import { settings } from './views/settings.js';
-import { enter, streakUp } from './ui/motion.js';
+import {
+  setup, cleanup, leave, intro, reduced, strike, countFlip, stampIn, stampOut, bumpNumber, sparks, expand, tabInk,
+} from './ui/motion.js';
 import { openMetronome, openTimer } from './ui/tools.js';
 import { celebrate } from './ui/celebrate.js';
 import { toastMedals, toastText } from './ui/toast.js';
+import { loadStage } from './ui/stage.js';
+import { powerChord } from './ui/audio.js';
 
+setup();
 let state = load();
 const view = document.getElementById('view');
+const nav = document.querySelector('.tabs');
+let stage = null;
 
 function derive() {
   const t = dayKey();
@@ -32,6 +39,7 @@ function derive() {
   return {
     state,
     t,
+    paint: currentPaint(state),
     streak: computeStreak(doneDays(state), t),
     current,
     exercises: current ? exercisesFor(current) : [],
@@ -58,9 +66,28 @@ function flushMedals() {
   pendingMedals = [];
 }
 
+const chord = () => { if (state.settings.sound) powerChord(); };
+
+// ── Guitarra no topo da tela Hoje ───────────────────────────────────────
+async function mountHero(d, withIntro) {
+  const host = view.querySelector('[data-guitar-host]');
+  if (!host) return;
+  stage = await loadStage();
+  if (!stage || !host.isConnected) return;
+  stage.mount(host, { mode: 'hero', paint: d.paint, onTap: chord });
+  host.querySelector('.fallback')?.remove();
+  const hint = view.querySelector('[data-hint]');
+  if (hint) hint.hidden = false;
+  if (withIntro) stage.heroIntro(reduced() ? null : window.gsap);
+}
+
+function detachHero() {
+  if (stage?.mountedIn && !document.getElementById('stage').open) stage.unmount();
+}
+
 // ── Roteamento ──────────────────────────────────────────────────────────
 const TITLES = {
-  hoje: 'Hoje', curso: 'Curso', aula: 'Aula', prova: 'Prova de palco', medalhas: 'Medalhas', ajustes: 'Ajustes', guia: 'Guia',
+  hoje: 'Hoje', curso: 'Discografia', aula: 'Aula', prova: 'Prova de palco', medalhas: 'Jaqueta', ajustes: 'Ajustes', guia: 'Guia',
 };
 
 function parse() {
@@ -68,8 +95,24 @@ function parse() {
   return { name, arg };
 }
 
-function render({ animate = true, keepScroll = false } = {}) {
+function updateTabs(name, animate) {
+  const tab = { aula: 'curso', prova: 'curso', guia: 'curso' }[name] ?? name;
+  let active = null;
+  document.querySelectorAll('[data-tab]').forEach((a) => {
+    if (a.dataset.tab === tab) {
+      a.setAttribute('aria-current', 'page');
+      active = a;
+    } else a.removeAttribute('aria-current');
+  });
+  tabInk(nav, active, animate);
+}
+
+async function render({ transition = false, keepScroll = false, withIntro = true } = {}) {
   const { name, arg } = parse();
+  if (transition) await leave(view);
+  const y = window.scrollY;
+  cleanup();
+  detachHero();
   const d = derive();
   const screens = {
     hoje: () => today(d),
@@ -80,83 +123,99 @@ function render({ animate = true, keepScroll = false } = {}) {
     medalhas: () => medals(d),
     ajustes: () => settings(d),
   };
-  const y = window.scrollY;
   view.innerHTML = (screens[name] ?? notFound)();
-  const tab = { aula: 'curso', prova: 'curso', guia: 'curso' }[name] ?? name;
-  document.querySelectorAll('[data-tab]').forEach((a) => {
-    if (a.dataset.tab === tab) a.setAttribute('aria-current', 'page');
-    else a.removeAttribute('aria-current');
-  });
+  document.body.dataset.route = name;
+  updateTabs(name, transition);
   const l = name === 'aula' ? lessonById(arg) : null;
-  document.title = `${l ? `Aula ${l.n}: ${l.title}` : TITLES[name] ?? 'Forja'} — Forja`;
-  if (keepScroll) window.scrollTo(0, y);
-  if (animate) enter(view);
+  document.title = `${l ? `Aula ${l.n}: ${l.title}` : TITLES[name] ?? 'Forja'} · Forja`;
+  window.scrollTo(0, keepScroll ? y : 0);
+  if (withIntro) intro(name, view);
+  if (name === 'hoje') mountHero(d, withIntro);
 }
 
-window.addEventListener('hashchange', () => {
+window.addEventListener('hashchange', async () => {
   const sheet = document.getElementById('sheet');
   if (sheet.open) sheet.close();
-  render();
-  window.scrollTo(0, 0);
+  await render({ transition: true });
   view.focus({ preventScroll: true });
 });
+
+window.addEventListener('resize', () => updateTabs(parse().name, false));
+document.fonts?.ready.then(() => { updateTabs(parse().name, false); window.ScrollTrigger?.refresh(); });
 
 // A virada do dia (4h) acontece com o app aberto: recalcula ao voltar.
 let lastDay = dayKey();
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && dayKey() !== lastDay) {
     lastDay = dayKey();
-    render({ animate: false, keepScroll: true });
+    render({ keepScroll: true, withIntro: false });
   }
 });
 
-// ── Treino do dia ───────────────────────────────────────────────────────
+// ── Setlist do dia ──────────────────────────────────────────────────────
 function onCheck(input) {
   const d = derive();
-  const id = input.dataset.check;
-  const before = d.streak.streak;
-  const r = toggleExercise(state, d.t, d.current, d.exercises, id);
+  const r = toggleExercise(state, d.t, d.current, d.exercises, input.dataset.check);
   persist();
-
   const after = derive();
-  input.closest('.ex').classList.toggle('is-done', input.checked);
+  const li = input.closest('.song');
+  li.classList.toggle('is-done', input.checked);
+  strike(li, input.checked);
   const c = countLabel(after);
-  const count = view.querySelector('[data-count]');
-  count.textContent = c.text;
-  count.classList.toggle('full', c.full);
+  countFlip(view.querySelector('[data-count]'), c.text, c.full);
+  view.querySelector('[data-foot]').textContent = footText(after);
 
-  view.querySelector('[data-daydone]').innerHTML = after.streak.todayDone ? dayDoneBanner(after.sess.done) : '';
+  const stamp = view.querySelector('[data-stamp]');
+  if (after.sess.done && stamp.hidden) stampIn(stamp, view.querySelector('[data-paper]'));
+  if (!after.sess.done && !stamp.hidden) stampOut(stamp);
+
   if (r.dayCompleted || r.dayUndone) {
-    const old = view.querySelector('#streak');
-    old.outerHTML = streakBlock(after);
+    view.querySelector('[data-hero-copy]').innerHTML = heroCopy(after);
+    view.querySelector('[data-stats]').outerHTML = stats(after);
+    const num = view.querySelector('[data-number]');
+    num.classList.toggle('cold', after.streak.streak === 0);
     if (r.dayCompleted) {
-      streakUp(view.querySelector('#streak'), before, after.streak.streak);
+      bumpNumber(num, after.streak.streak);
+      sparks(view.querySelector('[data-sparks]'), num);
+      stage?.strum();
+      chord();
       award();
       navigator.storage?.persist?.();
+    } else {
+      num.textContent = after.streak.streak;
     }
   }
 }
 
-function onValue(input) {
-  const d = derive();
-  const ex = d.exercises.find((e) => e.id === input.dataset.value);
-  const raw = input.value.trim().replace(',', '.');
-  const value = raw === '' ? null : Number(raw);
-  const record = setValue(state, d.t, d.current, ex, value);
-  persist();
-  if (record) toastText('Recorde novo', `${ex.name}: ${value} ${ex.unit}`);
-  award();
-  render({ animate: false, keepScroll: true });
+function markHit(exId, ex, value) {
+  const label = view.querySelector(`[data-value="${exId}"]`)?.closest('.result');
+  if (!label) return;
+  label.querySelector('.hit')?.remove();
+  const ok = value !== null && ex.target !== undefined && (ex.lower ? value <= ex.target : value >= ex.target);
+  if (ok) label.insertAdjacentHTML('beforeend', ' <span class="hit">bateu a meta</span>');
 }
 
-function useResult(exId, value) {
+function saveValue(exId, value) {
   const d = derive();
   const ex = d.exercises.find((e) => e.id === exId);
   const record = setValue(state, d.t, d.current, ex, value);
   persist();
+  const input = view.querySelector(`[data-value="${exId}"]`);
+  if (input && value !== null) input.value = value;
+  markHit(exId, ex, value);
   if (record) toastText('Recorde novo', `${ex.name}: ${value} ${ex.unit}`);
   award();
-  render({ animate: false, keepScroll: true });
+}
+
+function onValue(input) {
+  const raw = input.value.trim().replace(',', '.');
+  saveValue(input.dataset.value, raw === '' ? null : Number(raw));
+}
+
+function onToggle(btn) {
+  const open = btn.getAttribute('aria-expanded') !== 'true';
+  btn.setAttribute('aria-expanded', String(open));
+  expand(btn.closest('.song'), open);
 }
 
 // ── Aulas e provas ──────────────────────────────────────────────────────
@@ -166,9 +225,9 @@ async function onComplete(lessonId) {
   persist();
   award({ defer: true });
   await celebrate({
-    kicker: `${l.review ? 'Revisão concluída' : 'Aula concluída'} na fase ${phaseById(l.phase).n}`,
+    kicker: `${l.review ? 'Revisão concluída' : 'Aula concluída'} no disco ${phaseById(l.phase).n}`,
     title: `Aula ${l.n}`,
-    sub: `${exercisesFor(l).length} exercícios entram no seu treino de cada dia até a próxima aula.`,
+    sub: `${exercisesFor(l).length} exercícios entram no seu setlist de cada dia até a próxima aula.`,
     paint: currentPaint(state),
   });
   location.hash = '#/hoje';
@@ -178,21 +237,25 @@ async function onComplete(lessonId) {
 async function onExam(input) {
   const p = phaseById(input.dataset.exam);
   const wasPassed = Boolean(state.exams[p.id]?.passedAt);
+  const paintBefore = currentPaint(state);
   const { justPassed } = toggleExamItem(state, p.id, Number(input.dataset.idx), p.exam.length, dayKey());
   persist();
-  input.closest('li').classList.toggle('is-done', input.checked);
+  const li = input.closest('.song');
+  li.classList.toggle('is-done', input.checked);
+  strike(li, input.checked);
   if (!justPassed) {
     // Desmarcou um item de uma prova já aprovada: tira o selo de aprovado.
-    if (wasPassed) render({ animate: false, keepScroll: true });
+    if (wasPassed) render({ keepScroll: true, withIntro: false });
     return;
   }
   award({ defer: true });
   const nextPhase = PHASES[p.n + 1];
   await celebrate({
-    kicker: `Prova de palco da fase ${p.n} aprovada`,
+    kicker: `Prova de palco do disco ${p.n} aprovada`,
     title: `Fase ${p.n}`,
-    sub: nextPhase ? `A fase ${nextPhase.n}, ${nextPhase.name}, está aberta.` : 'Você fechou o curso inteiro. A guitarra está pronta para o palco.',
+    sub: nextPhase ? `O disco ${nextPhase.n}, ${nextPhase.name}, está aberto.` : 'Você fechou o curso inteiro. A guitarra está pronta para o palco.',
     paint: p.paint,
+    fromPaint: paintBefore,
     newPaint: true,
     action: nextPhase ? 'Seguir' : 'Fechar',
   });
@@ -206,7 +269,7 @@ async function replay(btn) {
     await celebrate({
       kicker: `Concluída em ${formatDay(state.lessons[l.id].completedAt)}`,
       title: `Aula ${l.n}`,
-      sub: 'Arraste para girar a guitarra.',
+      sub: 'Arraste para girar a guitarra; toque para tocar.',
       paint: currentPaint(state),
       action: 'Voltar',
     });
@@ -215,7 +278,7 @@ async function replay(btn) {
     await celebrate({
       kicker: 'Pintura conquistada na prova de palco',
       title: `Fase ${p.n}`,
-      sub: 'Arraste para girar a guitarra.',
+      sub: 'Arraste para girar a guitarra; toque para tocar.',
       paint: p.paint,
       action: 'Voltar',
     });
@@ -237,7 +300,7 @@ function doExport() {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   award();
-  render({ animate: false, keepScroll: true });
+  render({ keepScroll: true, withIntro: false });
 }
 
 async function doImport(input) {
@@ -262,8 +325,8 @@ function doReset() {
   if (!window.confirm('Tem certeza? Ofensiva, aulas e patches vão zerar.')) return;
   state = blankState();
   persist();
-  location.hash = '#/hoje';
-  render();
+  if (location.hash === '#/hoje') render();
+  else location.hash = '#/hoje';
 }
 
 // ── Eventos ─────────────────────────────────────────────────────────────
@@ -276,20 +339,29 @@ view.addEventListener('change', (ev) => {
   else if (el.matches('[data-free]')) {
     state.settings.freeMode = el.checked;
     persist();
+  } else if (el.matches('[data-sound]')) {
+    state.settings.sound = el.checked;
+    persist();
+    if (el.checked) powerChord();
   }
 });
 
 view.addEventListener('click', (ev) => {
+  const toggle = ev.target.closest('[data-toggle]');
+  if (toggle) {
+    onToggle(toggle);
+    return;
+  }
   const btn = ev.target.closest('[data-action]');
   if (!btn) return;
   const d = derive();
   const ex = d.exercises.find((e) => e.id === btn.dataset.ex);
   switch (btn.dataset.action) {
     case 'metronome':
-      openMetronome({ name: ex.name, target: ex.target, onUse: (v) => useResult(ex.id, v) });
+      openMetronome({ name: ex.name, target: ex.target, onUse: (v) => saveValue(ex.id, v) });
       break;
     case 'timer':
-      openTimer({ name: ex.name, onUse: (v) => useResult(ex.id, v) });
+      openTimer({ name: ex.name, onUse: (v) => saveValue(ex.id, v) });
       break;
     case 'complete':
       btn.disabled = true;
