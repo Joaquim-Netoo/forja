@@ -99,9 +99,10 @@ main:focus { outline: none; }
 }
 .paper ::selection { background: var(--ink); color: var(--paper); }
 .paper :focus-visible { outline-color: var(--ink); }
+/* Fita de palco: bordas compridas retas, pontas rasgadas, trama leve. */
 .tape {
-  position: absolute; top: -14px; width: 96px; height: 30px; background: var(--tape);
-  clip-path: polygon(3% 8%, 12% 0, 26% 9%, 40% 1%, 55% 8%, 70% 0, 84% 7%, 97% 0, 100% 92%, 88% 100%, 73% 92%, 58% 100%, 44% 93%, 29% 100%, 15% 92%, 0 100%);
+  position: absolute; top: -14px; width: 96px; height: 30px;
+  background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 30' preserveAspectRatio='none'><path d='M4 0H92l3 4-3 4 4 4-3 5 3 4-4 4 3 5H3l-3-4 4-4-3-5 3-4-4-4 3-5Z' fill='%23343130' fill-opacity='.9'/><path d='M6 8H90M6 15H90M6 22H90' stroke='%23ffffff' stroke-opacity='.06'/></svg>") center / 100% 100% no-repeat;
 }
 .tape.l { left: 18px; transform: rotate(-7deg); }
 .tape.r { right: 18px; transform: rotate(5deg); }

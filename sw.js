@@ -1,5 +1,5 @@
 // Cache offline. Troque VERSION a cada publicação para atualizar os arquivos.
-const VERSION = 'forja-v2';
+const VERSION = 'forja-v2.1';
 const CORE = [
   './', 'index.html', 'manifest.webmanifest', 'css/tokens.css', 'css/app.css',
   'js/app.js', 'js/state.js', 'js/dates.js', 'js/streak.js', 'js/progress.js', 'js/medals.js', 'js/game.js',
